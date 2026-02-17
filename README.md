@@ -1,46 +1,120 @@
-# WooCommerce → Laravel Sync Bridge
+# Laravel WooCommerce Sync Bridge
 
-Synchronize WooCommerce products, orders and customers into a Laravel backend using the WooCommerce REST API.  
-This project demonstrates a clean integration pattern between a WooCommerce store and a custom Laravel application.
+Practical Laravel app for syncing WooCommerce data into a local relational model for custom backend workflows, BI, analytics, and integrations.
 
-## Features
+## What this project does
 
-- Simple WooCommerce API client service.
-- Commands to sync products, orders and customers into local tables.
-- Upsert logic based on WooCommerce IDs.
-- Support for pagination to handle larger catalogs.
-- Basic logging of sync runs.
+- Connects to WooCommerce REST API (`wc/v3`).
+- Pulls paginated products, orders, and customers.
+- Upserts data into local tables (`products`, `orders`, `customers`).
+- Stores full `raw_payload` JSON for audit/replay.
+- Logs every sync run in `sync_logs`.
+- Exposes:
+  - CLI commands (`woo:sync-products`, `woo:sync-orders`, `woo:sync-customers`)
+  - queue jobs for heavier loads
+  - scheduler definitions
+  - read-only operations panel: `/woo-sync`
 
-## Requirements
+## Architecture (flow)
 
-- PHP 8.0+
-- Laravel 10+
-- WooCommerce store with REST API keys (v3).
+WooCommerce REST API -> `App\Services\WooCommerce\Client` -> `SyncProducts|SyncOrders|SyncCustomers` -> Local DB -> `sync_logs` + `/woo-sync` panel
 
-## High-level architecture
+## Repository structure
 
-WooCommerce REST API → Laravel WooClient → Sync Services → Local DB (products, orders, customers) → Optional dashboard.
+- `app/Services/WooCommerce/Client.php` - HTTP wrapper for Woo endpoints.
+- `app/Services/WooCommerce/Sync*.php` - sync services with pagination + upsert.
+- `app/Models/*` - Product, Order, Customer, SyncLog.
+- `app/Console/Commands/*` - manual sync commands.
+- `app/Jobs/*` - queueable sync jobs.
+- `app/Console/Kernel.php` - scheduler setup.
+- `config/woocommerce.php` - integration config.
+- `routes/web.php` + `WooSyncController` + Blade panel.
+- `database/migrations/*` - local schema.
 
-## Planned structure
+## Setup
 
-- `app/Services/WooCommerce/Client.php`
-- `app/Services/WooCommerce/SyncProducts.php`
-- `app/Services/WooCommerce/SyncOrders.php`
-- `app/Services/WooCommerce/SyncCustomers.php`
-- `app/Console/Commands/SyncWooProducts.php`
-- `app/Console/Commands/SyncWooOrders.php`
-- `app/Console/Commands/SyncWooCustomers.php`
-- `config/woocommerce.php`
-- `resources/views/woo-sync/index.blade.php`
+1. Install dependencies:
 
-## Roadmap
+```bash
+composer install
+```
 
-- [ ] Implement WooCommerce client with pagination and error handling.
-- [ ] Add migrations for products, orders and customers tables.
-- [ ] Implement Sync* services with upsert logic.
-- [ ] Add artisan commands for manual sync.
-- [ ] Add a minimal dashboard showing last sync status.
+1. Configure environment:
 
-## License
+```bash
+cp .env.example .env
+php artisan key:generate
+```
 
-MIT
+Set Woo credentials in `.env`:
+
+```env
+WOO_STORE_URL=https://your-store.example
+WOO_CONSUMER_KEY=ck_xxx
+WOO_CONSUMER_SECRET=cs_xxx
+WOO_API_VERSION=wc/v3
+```
+
+1. Run migrations:
+
+```bash
+php artisan migrate
+```
+
+1. Optional queue setup:
+
+```bash
+php artisan queue:table
+php artisan migrate
+php artisan queue:work
+```
+
+## Running sync
+
+Manual sync examples:
+
+```bash
+php artisan woo:sync-products
+php artisan woo:sync-orders
+php artisan woo:sync-customers
+```
+
+Queued variant:
+
+```bash
+php artisan woo:sync-products --queued
+```
+
+## Scheduler
+
+Defined in `app/Console/Kernel.php`:
+
+- products hourly,
+- orders every 2 hours,
+- customers every 3 hours.
+
+Set cron in production:
+
+```bash
+* * * * * php /path/to/artisan schedule:run >> /dev/null 2>&1
+```
+
+## Web panel
+
+- Route: `/woo-sync`
+- Purpose: operational visibility over recent syncs.
+- Includes manual trigger buttons (local/testing guarded).
+
+## Tests
+
+- `tests/Feature/SyncProductsTest.php` demonstrates fake Woo client -> upsert assertions.
+
+## Docker (optional)
+
+`docker-compose.yml` includes MySQL and a lightweight PHP service for quick local bootstrapping.
+
+## Why this repo matters in portfolio
+
+- Real-world WooCommerce -> Laravel integration scenario.
+- Clean separation: client layer, sync services, jobs, commands.
+- Focus on data integrity (`raw_payload`) and operational logging (`sync_logs`).
